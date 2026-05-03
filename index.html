@@ -8,7 +8,7 @@
     <!-- Facebook Pixel Code -->
     <script>
     !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window, document,'script','https://connect.facebook.net/en_US/fbevents.js');
-    fbq('init', '1478482110437780'); // NOVO PIXEL DO CLIENTE
+    fbq('init', '1478482110437780'); // PIXEL DO CLIENTE MANTIDO
     fbq('track', 'PageView');
     </script>
     <noscript>
@@ -37,12 +37,23 @@
         async function carregarTally() {
             const urlParams = new URLSearchParams(window.location.search);
             const valor = urlParams.get('valor') || '';
-            const fbclid = urlParams.get('fbclid') || '';
+            const fbclidUrl = urlParams.get('fbclid') || '';
             
-            // FBC Real (se vier de anúncio) ou identificador de Acesso Direto
-            const fbc = fbclid ? `fb.1.${Date.now()}.${fbclid}` : `fb.1.${Date.now()}.direct_access`;
+            // --- LÓGICA DE DESENTUPIMENTO DO FBC ---
+            // 1. Tenta recuperar o rastro real pelo cookie (se o Pixel já o salvou)
+            let fbc = getCookie('_fbc');
 
-            // BUSCA PELO FBP REAL: Tenta 6 vezes para dar tempo do Pixel carregar o cookie
+            // 2. Se o cookie não existir, mas houver fbclid na URL, monta o rastro
+            if (!fbc && fbclidUrl) {
+                fbc = `fb.1.${Date.now()}.${fbclidUrl}`;
+            }
+
+            // 3. Fallback: Caso o lead tenha vindo de um acesso direto sem rastro anterior
+            if (!fbc) {
+                fbc = `fb.1.${Date.now()}.direct_access`;
+            }
+
+            // --- BUSCA PELO FBP COM RETRY ---
             let fbp = "";
             for (let i = 0; i < 6; i++) {
                 fbp = getCookie('_fbp');
@@ -50,12 +61,12 @@
                 await new Promise(r => setTimeout(r, 500));
             }
 
+            // --- CAPTURA DE IP COM TIMEOUT (Segurança para o hardware) ---
             const ua = navigator.userAgent.substring(0, 150);
             let ip = '';
             try {
-                // AbortController impede que o script trave se a API de IP demorar
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 2000);
+                const timeoutId = setTimeout(() => controller.abort(), 2000); 
                 const res = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
                 const data = await res.json();
                 ip = data.ip;
@@ -64,17 +75,18 @@
                 ip = "1.1.1.1"; 
             }
 
-            const tallyID = "0Qbqyy"; // NOVO ID DO TALLY DO CLIENTE
-            const finalURL = `https://tally.so/r/${tallyID}?valor=${valor}&fbc=${fbc}&fbp=${fbp}&ip=${ip}&ua=${encodeURIComponent(ua)}`;
+            const tallyID = "0Qbqyy"; // ID DO TALLY DO CLIENTE MANTIDO
             
-            // Só seta o SRC se o elemento existir no DOM
+            // Construção da URL com encoding para evitar quebras de parâmetros
+            const finalURL = `https://tally.so/r/${tallyID}?valor=${valor}&fbc=${encodeURIComponent(fbc)}&fbp=${fbp}&ip=${ip}&ua=${encodeURIComponent(ua)}`;
+            
             const iframe = document.getElementById('tally-iframe');
             if (iframe) {
                 iframe.src = finalURL;
             }
         }
 
-        // Garante a execução após o carregamento completo para não conflitar com o hardware
+        // Execução segura respeitando o estado do DOM
         if (document.readyState === 'complete') {
             carregarTally();
         } else {
